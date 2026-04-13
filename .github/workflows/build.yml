@@ -21,10 +21,6 @@ jobs:
         with:
           bun-version: latest
       
-      - name: Install Git
-        run: |
-          choco install git -y
-      
       - name: Clone QiangQiang Framework
         run: |
           git clone --depth 1 --branch main https://github.com/kobolingfeng/qiangqiang.git temp_qiangqiang
@@ -37,10 +33,16 @@ jobs:
       
       - name: Copy Project Files
         run: |
-          # 复制前端文件
-          Copy-Item -Path "src\frontend\*" -Destination "temp_qiangqiang\src\frontend\" -Recurse -Force
+          $ErrorActionPreference = "Stop"
           
-          # 复制核心文件
+          # 复制前端目录（确保目标存在）
+          $frontendDest = "temp_qiangqiang\src\frontend"
+          if (-not (Test-Path $frontendDest)) {
+              New-Item -ItemType Directory -Path $frontendDest -Force | Out-Null
+          }
+          Copy-Item -Path "src\frontend\*" -Destination $frontendDest -Recurse -Force
+          
+          # 复制其他文件
           Copy-Item -Path "src\scanner.ts" -Destination "temp_qiangqiang\src\scanner.ts" -Force
           Copy-Item -Path "src\api.ts" -Destination "temp_qiangqiang\src\api.ts" -Force
           Copy-Item -Path "package.json" -Destination "temp_qiangqiang\package.json" -Force
@@ -54,7 +56,7 @@ jobs:
       
       - name: Create Output Directory
         run: |
-          New-Item -ItemType Directory -Path "dist" -Force
+          New-Item -ItemType Directory -Path "dist" -Force | Out-Null
       
       - name: Copy Build Artifacts
         run: |
