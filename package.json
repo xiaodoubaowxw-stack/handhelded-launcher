@@ -4,20 +4,7 @@
   "type": "module",
   "description": "基于 QiangQiang 框架的轻量级 Steam 游戏启动器",
   "scripts": {
-    "setup": "bun run setup:qiangqiang",
-    "setup:qiangqiang": "bun run build:download-qiangqiang",
-    "dev": "bun run dev:launcher",
-    "dev:launcher": "bun run build:download-qiangqiang && bun run dev:qiangqiang",
-    "dev:qiangqiang": "cd temp_qiangqiang && bun run dev",
-    "build": "bun run build:full",
-    "build:full": "bun run build:download-qiangqiang && bun run build:compile",
-    "build:download-qiangqiang": "bun run build:clone && bun run build:prepare",
-    "build:clone": "rm -rf temp_qiangqiang && git clone --depth 1 --branch main https://github.com/kobolingfeng/qiangqiang.git temp_qiangqiang",
-    "build:prepare": "cd temp_qiangqiang && bun install && bun run setup",
-    "build:compile": "bun run build:copy-files && bun run build:run",
-    "build:copy-files": "node -e \"const fs=require('fs');const path=require('path');function copyDir(src,dest){fs.mkdirSync(dest,{recursive:true});fs.readdirSync(src).forEach(f=>{const s=path.join(src,f),d=path.join(dest,f);fs.statSync(s).isDirectory()?copyDir(s,d):fs.copyFileSync(s,d)})};copyDir('src/frontend','temp_qiangqiang/src/frontend');['scanner.ts','api.ts'].forEach(f=>fs.copyFileSync('src/'+f,'temp_qiangqiang/src/'+f));fs.copyFileSync('package.json','temp_qiangqiang/package.json');fs.copyFileSync('app.config.json','temp_qiangqiang/app.config.json');\"",
-    "build:run": "cd temp_qiangqiang && bun run build && bun run build:single",
-    "package": "mkdir -p dist && cp temp_qiangqiang/dist/强强-portable.zip dist/QiangQiangGameLauncher-portable.zip 2>/dev/null || true && cp temp_qiangqiang/dist/强强-single.exe dist/QiangQiangGameLauncher.exe 2>/dev/null || true",
+    "dev": "cd temp_qiangqiang && bun run dev",
     "clean": "rm -rf temp_qiangqiang dist"
   },
   "devDependencies": {
