@@ -35,7 +35,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          
           $frontendDest = "temp_qiangqiang\src\frontend"
           if (-not (Test-Path $frontendDest)) {
               New-Item -ItemType Directory -Path $frontendDest -Force | Out-Null
@@ -46,11 +45,13 @@ jobs:
           Copy-Item -Path "app.config.json" -Destination "temp_qiangqiang\app.config.json" -Force
       
       - name: Build Frontend
+        shell: bash
         run: |
           cd temp_qiangqiang
           bun scripts/build.ts --frontend-only
       
       - name: Build Native
+        shell: bash
         run: |
           cd temp_qiangqiang
           bun scripts/build.ts --native-only
