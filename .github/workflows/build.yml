@@ -1,0 +1,83 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      
+      - name: Install Git
+        run: |
+          choco install git -y
+      
+      - name: Clone QiangQiang Framework
+        run: |
+          git clone --depth 1 --branch main https://github.com/kobolingfeng/qiangqiang.git temp_qiangqiang
+      
+      - name: Install QiangQiang Dependencies
+        run: |
+          cd temp_qiangqiang
+          bun install
+          bun run setup
+      
+      - name: Copy Project Files
+        run: |
+          # 复制前端文件
+          Copy-Item -Path "src\frontend\*" -Destination "temp_qiangqiang\src\frontend\" -Recurse -Force
+          
+          # 复制核心文件
+          Copy-Item -Path "src\scanner.ts" -Destination "temp_qiangqiang\src\scanner.ts" -Force
+          Copy-Item -Path "src\api.ts" -Destination "temp_qiangqiang\src\api.ts" -Force
+          Copy-Item -Path "package.json" -Destination "temp_qiangqiang\package.json" -Force
+          Copy-Item -Path "app.config.json" -Destination "temp_qiangqiang\app.config.json" -Force
+      
+      - name: Build Project
+        run: |
+          cd temp_qiangqiang
+          bun run build
+          bun run build:single
+      
+      - name: Create Output Directory
+        run: |
+          New-Item -ItemType Directory -Path "dist" -Force
+      
+      - name: Copy Build Artifacts
+        run: |
+          if (Test-Path "temp_qiangqiang\dist\强强-portable.zip") {
+              Copy-Item "temp_qiangqiang\dist\强强-portable.zip" "dist\QiangQiangGameLauncher-portable.zip"
+          }
+          if (Test-Path "temp_qiangqiang\dist\强强-single.exe") {
+              Copy-Item "temp_qiangqiang\dist\强强-single.exe" "dist\QiangQiangGameLauncher.exe"
+          }
+      
+      - name: Upload Release Assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: QiangQiangGameLauncher
+          path: |
+            dist/*

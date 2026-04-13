@@ -1,0 +1,19 @@
+{
+  "name": "QiangQiangGameLauncher",
+  "title": "游戏启动器",
+  "width": 1280,
+  "height": 800,
+  "minWidth": 960,
+  "minHeight": 600,
+  "single": true,
+  "singleFile": true,
+  "dev": {
+    "command": "bun",
+    "args": "run dev:frontend",
+    "port": 5173,
+    "waitForPort": true
+  },
+  "build": {
+    "command": "bun run build:frontend"
+  }
+}

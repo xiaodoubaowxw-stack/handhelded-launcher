@@ -1,0 +1,24 @@
+{
+  "name": "qiangqiang-game-launcher",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "基于 QiangQiang 框架的轻量级 Steam 游戏启动器",
+  "scripts": {
+    "setup": "bun run setup:qiangqiang",
+    "setup:qiangqiang": "bun run build:download-qiangqiang",
+    "dev": "bun run dev:launcher",
+    "dev:launcher": "bun run build:download-qiangqiang && bun run dev:qiangqiang",
+    "dev:qiangqiang": "cd temp_qiangqiang && bun run dev",
+    "build": "bun run build:full",
+    "build:full": "bun run build:download-qiangqiang && bun run build:compile",
+    "build:download-qiangqiang": "bun run build:clone && bun run build:prepare",
+    "build:clone": "rm -rf temp_qiangqiang && git clone --depth 1 --branch main https://github.com/kobolingfeng/qiangqiang.git temp_qiangqiang",
+    "build:prepare": "cd temp_qiangqiang && bun install && bun run setup",
+    "build:compile": "cp -r src/frontend temp_qiangqiang/src/ && cp src/scanner.ts temp_qiangqiang/src/ && cp src/api.ts temp_qiangqiang/src/ && cp package.json temp_qiangqiang/ && cp app.config.json temp_qiangqiang/ && cd temp_qiangqiang && bun run build && bun run build:single",
+    "package": "mkdir -p dist && cp temp_qiangqiang/dist/强强-portable.zip dist/QiangQiangGameLauncher-portable.zip 2>/dev/null || true && cp temp_qiangqiang/dist/强强-single.exe dist/QiangQiangGameLauncher.exe 2>/dev/null || true",
+    "clean": "rm -rf temp_qiangqiang dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0"
+  }
+}
