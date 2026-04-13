@@ -1,12 +1,11 @@
-// QiangQiangGameLauncher - 前端入口
-// 基于 QiangQiang 框架的游戏启动器
+// 掌机启动器 - QiangQiang 入口
+// 负责加载 Steam 游戏扫描和 UI 渲染
 
-import { win, shell, http, app, fs } from '../api';
+import { win, shell, http, app, fs } from './api';
 import { Game, scanSteamGames } from './scanner';
 
 // 缩略图缓存配置
 const CACHE_VERSION = 'v1';
-const MAX_CACHE_AGE_DAYS = 30;
 
 // 获取缓存目录
 async function getCacheDir(): Promise<string> {
@@ -27,7 +26,6 @@ async function ensureCacheDir(): Promise<string> {
 async function downloadAndCacheImage(url: string, appId: string, cacheDir: string): Promise<string> {
     const cachePath = `${cacheDir}/${appId}_${CACHE_VERSION}.jpg`;
     
-    // 检查缓存是否存在
     try {
         const stat = await fs.stat(cachePath);
         if (stat.isFile) {
@@ -36,7 +34,6 @@ async function downloadAndCacheImage(url: string, appId: string, cacheDir: strin
         }
     } catch {}
     
-    // 下载图片
     try {
         console.log(`[下载] ${appId} <- ${url}`);
         const response = await http.get(url);
@@ -49,40 +46,31 @@ async function downloadAndCacheImage(url: string, appId: string, cacheDir: strin
         console.error(`[下载失败] ${appId}:`, error);
     }
     
-    // 下载失败返回原始URL
     return url;
 }
 
-let games: Game[] = [];
-let grid: ReturnType<typeof createGrid> | null = null;
-
-// 初始化应用
-async function init() {
-    // 设置窗口
-    await win.setTitle('掌机启动器');
-    await win.setSize(2560, 1600);
-    await win.center();
-    await win.setEffect('mica'); // Windows 11 Mica 效果
+// 预加载缩略图（带缓存）
+async function preloadThumbnails(games: Game[], cacheDir: string): Promise<Map<string, string>> {
+    const thumbnailMap = new Map<string, string>();
+    const loadPromises: Promise<void>[] = [];
     
-    // 加载样式
-    await loadStyles();
+    const gamesToLoad = games.slice(0, 10);
     
-    // 创建UI
-    await createUI();
+    for (const game of gamesToLoad) {
+        const promise = downloadAndCacheImage(game.thumbnail, game.appId, cacheDir)
+            .then(cachePath => thumbnailMap.set(game.appId, cachePath));
+        loadPromises.push(promise);
+    }
     
-    // 扫描游戏
-    await scanGames();
+    await Promise.all(loadPromises);
+    return thumbnailMap;
 }
 
-// 加载CSS样式
-async function loadStyles() {
+// 加载 CSS 样式
+function loadStyles() {
     const style = document.createElement('style');
     style.textContent = `
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
@@ -110,10 +98,7 @@ async function loadStyles() {
             -webkit-text-fill-color: transparent;
         }
         
-        .header-actions {
-            display: flex;
-            gap: 16px;
-        }
+        .header-actions { display: flex; gap: 16px; }
         
         .btn {
             padding: 16px 32px;
@@ -141,13 +126,9 @@ async function loadStyles() {
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
         
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
         
-        .main-content {
-            padding: 40px;
-        }
+        .main-content { padding: 40px; }
         
         .loading {
             display: flex;
@@ -167,14 +148,9 @@ async function loadStyles() {
             animation: spin 1s linear infinite;
         }
         
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
-        .loading-text {
-            font-size: 18px;
-            color: rgba(255, 255, 255, 0.7);
-        }
+        .loading-text { font-size: 18px; color: rgba(255, 255, 255, 0.7); }
         
         .game-grid {
             display: grid;
@@ -205,9 +181,7 @@ async function loadStyles() {
             background: rgba(0, 0, 0, 0.3);
         }
         
-        .game-card .game-info {
-            padding: 24px;
-        }
+        .game-card .game-info { padding: 24px; }
         
         .game-card .game-name {
             font-size: 22px;
@@ -227,10 +201,7 @@ async function loadStyles() {
             color: rgba(255, 255, 255, 0.6);
         }
         
-        .empty-state .icon {
-            font-size: 80px;
-            opacity: 0.5;
-        }
+        .empty-state .icon { font-size: 80px; opacity: 0.5; }
         
         .toast {
             position: fixed;
@@ -246,34 +217,23 @@ async function loadStyles() {
             z-index: 1000;
         }
         
-        .toast.success {
-            background: linear-gradient(135deg, #10b981, #059669);
-        }
-        
-        .toast.error {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-        }
+        .toast.success { background: linear-gradient(135deg, #10b981, #059669); }
+        .toast.error { background: linear-gradient(135deg, #ef4444, #dc2626); }
         
         @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-            }
+            from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
     `;
     document.head.appendChild(style);
 }
 
-// 创建UI
-async function createUI() {
+// 创建 UI
+function createUI() {
     const app = document.createElement('div');
     app.innerHTML = `
         <header class="header">
-            <h1>🎮 游戏启动器</h1>
+            <h1>🎮 掌机启动器</h1>
             <div class="header-actions">
                 <button class="btn btn-secondary" onclick="window.refreshGames()">🔄 刷新</button>
             </div>
@@ -295,30 +255,13 @@ async function createUI() {
     `;
     document.body.appendChild(app);
     
-    // 暴露刷新函数
     (window as any).refreshGames = scanGames;
 }
 
 // 扫描游戏
-// 预加载缩略图（带缓存）
-async function preloadThumbnails(games: Game[], cacheDir: string): Promise<Map<string, string>> {
-    const thumbnailMap = new Map<string, string>();
-    const loadPromises: Promise<void>[] = [];
-    
-    // 并发加载前10个游戏的缩略图
-    const gamesToLoad = games.slice(0, 10);
-    
-    for (const game of gamesToLoad) {
-        const promise = downloadAndCacheImage(game.thumbnail, game.appId, cacheDir)
-            .then(cachePath => thumbnailMap.set(game.appId, cachePath));
-        loadPromises.push(promise);
-    }
-    
-    await Promise.all(loadPromises);
-    return thumbnailMap;
-}
-
 async function scanGames() {
+    let games: Game[] = [];
+    
     const loading = document.getElementById('loading')!;
     const content = document.getElementById('content')!;
     const empty = document.getElementById('empty')!;
@@ -342,20 +285,17 @@ async function scanGames() {
         const gridContainer = document.getElementById('game-grid')!;
         gridContainer.innerHTML = '';
         
-        // 准备缓存
         const cacheDir = await ensureCacheDir();
         const thumbnailMap = await preloadThumbnails(games, cacheDir);
         
-        games.forEach(game => {
+        for (const game of games) {
             const card = document.createElement('div');
             card.className = 'game-card';
             card.onclick = () => launchGame(game);
             
-            // 缩略图（优先使用缓存）
             const img = document.createElement('img');
             img.src = thumbnailMap.get(game.appId) || game.thumbnail;
             img.onerror = () => {
-                // 缓存失败则使用占位图
                 img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect fill="%231a1a2e" width="320" height="180"/><text x="50%" y="50%" text-anchor="middle" fill="%23666" font-size="40">🎮</text></svg>';
             };
             
@@ -366,7 +306,7 @@ async function scanGames() {
             card.appendChild(img);
             card.appendChild(info);
             gridContainer.appendChild(card);
-        });
+        }
         
         showToast(`已加载 ${games.length} 款游戏`, 'success');
     } catch (error) {
@@ -400,5 +340,16 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
     setTimeout(() => toast.remove(), 3000);
 }
 
-// 启动
+// 初始化
+async function init() {
+    await win.setTitle('掌机启动器');
+    await win.setSize(2560, 1600);
+    await win.center();
+    await win.setEffect('mica');
+    
+    loadStyles();
+    createUI();
+    await scanGames();
+}
+
 init();
