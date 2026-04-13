@@ -55,11 +55,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "dist" -Force | Out-Null
+          if (Test-Path "temp_qiangqiang\dist\app.exe") {
+              Copy-Item "temp_qiangqiang\dist\app.exe" "dist\QiangQiangGameLauncher.exe"
+          }
           if (Test-Path "temp_qiangqiang\dist\强强-portable.zip") {
               Copy-Item "temp_qiangqiang\dist\强强-portable.zip" "dist\QiangQiangGameLauncher-portable.zip"
-          }
-          if (Test-Path "temp_qiangqiang\dist\强强-single.exe") {
-              Copy-Item "temp_qiangqiang\dist\强强-single.exe" "dist\QiangQiangGameLauncher.exe"
           }
       
       - name: Upload Release Assets
