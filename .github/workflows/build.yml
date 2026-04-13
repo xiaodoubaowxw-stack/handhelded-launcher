@@ -28,8 +28,8 @@ jobs:
       - name: Install QiangQiang Dependencies
         run: |
           cd temp_qiangqiang
-          bun install
-          bun scripts/setup.ts
+          ~/.bun/bin/bun.exe install
+          ~/.bun/bin/bun.exe scripts/setup.ts
       
       - name: Copy Project Files
         shell: pwsh
@@ -45,17 +45,15 @@ jobs:
           Copy-Item -Path "app.config.json" -Destination "temp_qiangqiang\app.config.json" -Force
       
       - name: Build Frontend
-        shell: bash
         run: |
           cd temp_qiangqiang
-          bun scripts/build.ts --frontend-only
+          ~/.bun/bin/bun.exe scripts/build.ts --frontend-only
       
       - name: Build Native
-        shell: bash
         run: |
           cd temp_qiangqiang
-          bun scripts/build.ts --native-only
-          bun scripts/build.ts --single-exe
+          ~/.bun/bin/bun.exe scripts/build.ts --native-only
+          ~/.bun/bin/bun.exe scripts/build.ts --single-exe
       
       - name: Prepare Output
         shell: pwsh
