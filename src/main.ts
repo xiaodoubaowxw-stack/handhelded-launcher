@@ -1,277 +1,555 @@
-// 掌机启动器 - QiangQiang 入口
-// 负责加载 Steam 游戏扫描和 UI 渲染
-
+// 掌机启动器 - Steam Big Picture Mode 风格 UI
 import { win, shell, http, app, fs } from './api';
 import { Game, scanSteamGames } from './scanner';
 
-// 缩略图缓存配置
 const CACHE_VERSION = 'v1';
 
-// 获取缓存目录
 async function getCacheDir(): Promise<string> {
     const appPath = await app.getPath('userData');
     return `${appPath}/thumbnails`;
 }
 
-// 确保缓存目录存在
 async function ensureCacheDir(): Promise<string> {
     const cacheDir = await getCacheDir();
-    try {
-        await fs.mkdir(cacheDir);
-    } catch {}
+    try { await fs.mkdir(cacheDir); } catch {}
     return cacheDir;
 }
 
-// 下载并缓存图片
-async function downloadAndCacheImage(url: string, appId: string, cacheDir: string): Promise<string> {
+async function downloadAndCache(url: string, appId: string, cacheDir: string): Promise<string> {
     const cachePath = `${cacheDir}/${appId}_${CACHE_VERSION}.jpg`;
-    
     try {
         const stat = await fs.stat(cachePath);
-        if (stat.isFile) {
-            console.log(`[缓存命中] ${appId}`);
+        if (stat.isFile) return cachePath;
+    } catch {}
+    try {
+        const res = await http.get(url);
+        if (res.body && res.body.length > 1000) {
+            await fs.writeTextFile(cachePath, res.body);
             return cachePath;
         }
     } catch {}
-    
-    try {
-        console.log(`[下载] ${appId} <- ${url}`);
-        const response = await http.get(url);
-        if (response.body && response.body.length > 1000) {
-            await fs.writeTextFile(cachePath, response.body);
-            console.log(`[已缓存] ${appId} -> ${cachePath}`);
-            return cachePath;
-        }
-    } catch (error) {
-        console.error(`[下载失败] ${appId}:`, error);
-    }
-    
     return url;
 }
 
-// 预加载缩略图（带缓存）
 async function preloadThumbnails(games: Game[], cacheDir: string): Promise<Map<string, string>> {
-    const thumbnailMap = new Map<string, string>();
-    const loadPromises: Promise<void>[] = [];
-    
-    const gamesToLoad = games.slice(0, 10);
-    
-    for (const game of gamesToLoad) {
-        const promise = downloadAndCacheImage(game.thumbnail, game.appId, cacheDir)
-            .then(cachePath => thumbnailMap.set(game.appId, cachePath));
-        loadPromises.push(promise);
-    }
-    
-    await Promise.all(loadPromises);
-    return thumbnailMap;
+    const map = new Map<string, string>();
+    await Promise.all(games.slice(0, 12).map(g =>
+        downloadAndCache(g.thumbnail, g.appId, cacheDir).then(p => map.set(g.appId, p))
+    ));
+    return map;
 }
 
-// 加载 CSS 样式
-function loadStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
+function createStyles() {
+    const s = document.createElement('style');
+    s.textContent = `
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            background: #0a0a0f;
             color: #fff;
             min-height: 100vh;
-            overflow-x: hidden;
+            overflow: hidden;
+            user-select: none;
         }
         
+        /* Steam-style dark background */
+        .steam-bg {
+            position: fixed;
+            inset: 0;
+            background: 
+                radial-gradient(ellipse at 20% 80%, rgba(45, 90, 140, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(100, 50, 150, 0.1) 0%, transparent 50%),
+                linear-gradient(180deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+            z-index: -1;
+        }
+        
+        /* Animated background grid */
+        .steam-bg::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            animation: gridMove 20s linear infinite;
+        }
+        
+        @keyframes gridMove {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(60px); }
+        }
+        
+        /* Header bar */
         .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            background: linear-gradient(180deg, rgba(10,10,15,0.98) 0%, rgba(10,10,15,0.85) 100%);
+            backdrop-filter: blur(20px);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 32px 64px;
-            background: rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 0 48px;
+            z-index: 100;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
         }
         
-        .header h1 {
-            font-size: 42px;
+        .header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(100,180,255,0.3), transparent);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .logo-text {
+            font-size: 26px;
             font-weight: 600;
-            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            background: linear-gradient(135deg, #fff 0%, #8ab4f8 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
         }
         
-        .header-actions { display: flex; gap: 16px; }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
         
-        .btn {
-            padding: 16px 32px;
-            border: none;
-            border-radius: 12px;
+        .header-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #ccc;
+            font-size: 15px;
             cursor: pointer;
-            font-size: 20px;
-            font-weight: 500;
             transition: all 0.2s ease;
         }
         
-        .btn-primary {
-            background: linear-gradient(135deg, #7c3aed, #00d4ff);
-            color: white;
+        .header-btn:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.2);
+            color: #fff;
+            transform: translateY(-1px);
         }
         
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(124, 58, 237, 0.4);
+        /* Main content */
+        .main {
+            padding: 110px 48px 48px;
+            height: 100vh;
+            overflow-y: auto;
         }
         
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .main::-webkit-scrollbar {
+            width: 6px;
         }
         
-        .btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
+        .main::-webkit-scrollbar-track {
+            background: transparent;
+        }
         
-        .main-content { padding: 40px; }
+        .main::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+        }
         
-        .loading {
+        /* Section title */
+        .section-title {
             display: flex;
-            flex-direction: column;
             align-items: center;
-            justify-content: center;
-            height: 60vh;
-            gap: 20px;
+            gap: 16px;
+            margin-bottom: 32px;
         }
         
-        .spinner {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #7c3aed;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .section-title h2 {
+            font-size: 22px;
+            font-weight: 500;
+            color: rgba(255,255,255,0.9);
+            letter-spacing: 0.5px;
         }
         
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .section-title .line {
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.1), transparent);
+        }
         
-        .loading-text { font-size: 18px; color: rgba(255, 255, 255, 0.7); }
+        .section-title .count {
+            font-size: 14px;
+            color: rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.05);
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
         
+        /* Game grid */
         .game-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 32px;
-            padding: 32px 0;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 24px;
         }
         
+        /* Game card */
         .game-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px;
+            position: relative;
+            background: rgba(20, 25, 35, 0.8);
+            border-radius: 16px;
             overflow: hidden;
             cursor: pointer;
-            transition: all 0.3s ease;
-            border: 3px solid transparent;
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            border: 1px solid rgba(255,255,255,0.05);
         }
         
         .game-card:hover {
-            transform: translateY(-12px) scale(1.03);
-            border-color: #7c3aed;
-            box-shadow: 0 30px 60px rgba(124, 58, 237, 0.4);
+            transform: translateY(-8px) scale(1.02);
+            border-color: rgba(100, 180, 255, 0.3);
+            box-shadow: 
+                0 20px 60px rgba(0,0,0,0.5),
+                0 0 40px rgba(100, 180, 255, 0.1),
+                inset 0 1px 0 rgba(255,255,255,0.1);
         }
         
-        .game-card img {
+        .game-card:hover .game-img {
+            transform: scale(1.08);
+        }
+        
+        .game-card:hover .game-overlay {
+            opacity: 1;
+        }
+        
+        .game-card:hover .play-btn {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+        }
+        
+        .game-img-wrap {
+            position: relative;
+            aspect-ratio: 16/10;
+            overflow: hidden;
+            background: #1a1a2e;
+        }
+        
+        .game-img {
             width: 100%;
-            aspect-ratio: 16/9;
+            height: 100%;
             object-fit: cover;
-            background: rgba(0, 0, 0, 0.3);
+            transition: transform 0.6s ease;
         }
         
-        .game-card .game-info { padding: 24px; }
+        .game-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.8) 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
         
-        .game-card .game-name {
-            font-size: 22px;
-            font-weight: 600;
+        .play-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            width: 72px;
+            height: 72px;
+            background: linear-gradient(135deg, #00d4ff, #0078d4);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.4);
+        }
+        
+        .play-btn::before {
+            content: '';
+            width: 0;
+            height: 0;
+            border-left: 20px solid #fff;
+            border-top: 12px solid transparent;
+            border-bottom: 12px solid transparent;
+            margin-left: 4px;
+        }
+        
+        .game-info {
+            padding: 16px 20px;
+        }
+        
+        .game-name {
+            font-size: 16px;
+            font-weight: 500;
+            color: #fff;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            margin-bottom: 4px;
         }
         
-        .empty-state {
+        .game-meta {
+            font-size: 13px;
+            color: rgba(255,255,255,0.4);
+        }
+        
+        /* Loading state */
+        .loading {
+            position: fixed;
+            inset: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 60vh;
-            gap: 20px;
-            color: rgba(255, 255, 255, 0.6);
+            background: #0a0a0f;
+            z-index: 200;
         }
         
-        .empty-state .icon { font-size: 80px; opacity: 0.5; }
+        .loading-logo {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            margin-bottom: 32px;
+            animation: pulse 2s ease-in-out infinite;
+        }
         
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100,180,255,0.2); }
+            50% { transform: scale(1.05); box-shadow: 0 0 40px 10px rgba(100,180,255,0.1); }
+        }
+        
+        .loading-text {
+            font-size: 18px;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 24px;
+        }
+        
+        .loading-bar {
+            width: 200px;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .loading-bar::after {
+            content: '';
+            display: block;
+            width: 40%;
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #0078d4);
+            border-radius: 2px;
+            animation: loadingSlide 1s ease-in-out infinite;
+        }
+        
+        @keyframes loadingSlide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(350%); }
+        }
+        
+        /* Empty state */
+        .empty {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0f;
+            z-index: 200;
+        }
+        
+        .empty-icon {
+            font-size: 100px;
+            margin-bottom: 24px;
+            opacity: 0.3;
+        }
+        
+        .empty-title {
+            font-size: 24px;
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 12px;
+        }
+        
+        .empty-desc {
+            font-size: 16px;
+            color: rgba(255,255,255,0.4);
+            text-align: center;
+            max-width: 400px;
+            line-height: 1.6;
+        }
+        
+        /* Toast */
         .toast {
             position: fixed;
             bottom: 40px;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translateX(-50%) translateY(100px);
             padding: 16px 32px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(30, 35, 45, 0.95);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 12px;
-            color: white;
-            font-size: 16px;
-            animation: slideUp 0.3s ease;
-            z-index: 1000;
+            color: #fff;
+            font-size: 15px;
+            backdrop-filter: blur(10px);
+            z-index: 300;
+            opacity: 0;
+            transition: all 0.3s ease;
         }
         
-        .toast.success { background: linear-gradient(135deg, #10b981, #059669); }
-        .toast.error { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
         
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .toast.success {
+            border-color: rgba(0, 212, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
+        }
+        
+        .toast.error {
+            border-color: rgba(255, 80, 80, 0.3);
+            box-shadow: 0 8px 32px rgba(255, 80, 80, 0.1);
+        }
+        
+        /* Fade in animation */
+        .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     `;
-    document.head.appendChild(style);
+    document.head.appendChild(s);
 }
 
-// 创建 UI
-function createUI() {
-    const app = document.createElement('div');
-    app.innerHTML = `
-        <header class="header">
-            <h1>🎮 掌机启动器</h1>
-            <div class="header-actions">
-                <button class="btn btn-secondary" onclick="window.refreshGames()">🔄 刷新</button>
-            </div>
-        </header>
-        <main class="main-content">
-            <div id="loading" class="loading">
-                <div class="spinner"></div>
-                <div class="loading-text">正在扫描 Steam 游戏库...</div>
-            </div>
-            <div id="content" style="display: none;">
-                <div id="game-grid" class="game-grid"></div>
-            </div>
-            <div id="empty" class="empty-state" style="display: none;">
-                <div class="icon">🎮</div>
-                <div>未检测到 Steam 游戏</div>
-                <div style="font-size: 14px;">请确保 Steam 已安装并运行过游戏</div>
-            </div>
-        </main>
+function createLoadingUI() {
+    const el = document.createElement('div');
+    el.className = 'loading';
+    el.id = 'loading';
+    el.innerHTML = `
+        <div class="loading-logo">🎮</div>
+        <div class="loading-text">正在扫描 Steam 游戏库...</div>
+        <div class="loading-bar"></div>
     `;
-    document.body.appendChild(app);
+    document.body.appendChild(el);
+}
+
+function createEmptyUI() {
+    const el = document.createElement('div');
+    el.className = 'empty';
+    el.id = 'empty';
+    el.style.display = 'none';
+    el.innerHTML = `
+        <div class="empty-icon">🎮</div>
+        <div class="empty-title">未检测到 Steam 游戏</div>
+        <div class="empty-desc">请确保 Steam 已安装在您的设备上，并且至少运行过一次游戏</div>
+    `;
+    document.body.appendChild(el);
+}
+
+function createMainUI() {
+    const el = document.createElement('div');
+    el.id = 'main';
+    el.style.display = 'none';
+    el.innerHTML = `
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">🎮</div>
+                <div class="logo-text">掌机启动器</div>
+            </div>
+            <div class="header-right">
+                <button class="header-btn" onclick="window.refreshGames()">
+                    <span>🔄</span>
+                    <span>刷新</span>
+                </button>
+            </div>
+        </div>
+        <div class="main">
+            <div class="section-title">
+                <h2>📚 游戏库</h2>
+                <div class="line"></div>
+                <div class="count" id="game-count">0 款游戏</div>
+            </div>
+            <div class="game-grid" id="game-grid"></div>
+        </div>
+    `;
+    document.body.appendChild(el);
     
     (window as any).refreshGames = scanGames;
 }
 
-// 扫描游戏
-async function scanGames() {
-    let games: Game[] = [];
+function showToast(msg: string, type: 'success' | 'error' = 'success') {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
     
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 2500);
+    });
+}
+
+async function launchGame(game: Game) {
+    showToast(`正在启动: ${game.name}`, 'success');
+    try {
+        await shell.openPath(game.exePath);
+    } catch (e) {
+        showToast('启动失败: ' + (e as Error).message, 'error');
+    }
+}
+
+async function scanGames() {
     const loading = document.getElementById('loading')!;
-    const content = document.getElementById('content')!;
     const empty = document.getElementById('empty')!;
+    const main = document.getElementById('main')!;
     
     loading.style.display = 'flex';
-    content.style.display = 'none';
     empty.style.display = 'none';
+    main.style.display = 'none';
     
     try {
-        games = await scanSteamGames();
+        const games = await scanSteamGames();
         
         loading.style.display = 'none';
         
@@ -280,75 +558,66 @@ async function scanGames() {
             return;
         }
         
-        content.style.display = 'block';
-        
-        const gridContainer = document.getElementById('game-grid')!;
-        gridContainer.innerHTML = '';
+        main.style.display = 'block';
         
         const cacheDir = await ensureCacheDir();
         const thumbnailMap = await preloadThumbnails(games, cacheDir);
         
-        for (const game of games) {
+        const grid = document.getElementById('game-grid')!;
+        const count = document.getElementById('game-count')!;
+        count.textContent = `${games.length} 款游戏`;
+        
+        grid.innerHTML = '';
+        
+        games.forEach((game, i) => {
             const card = document.createElement('div');
-            card.className = 'game-card';
+            card.className = 'game-card fade-in';
+            card.style.animationDelay = `${i * 50}ms`;
+            
+            const imgSrc = thumbnailMap.get(game.appId) || game.thumbnail;
+            const placeholder = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 280"><rect fill="%231a1a2e" width="448" height="280"/><text x="50%" y="50%" text-anchor="middle" fill="%23445566" font-size="60">🎮</text></svg>';
+            
+            card.innerHTML = `
+                <div class="game-img-wrap">
+                    <img class="game-img" src="${imgSrc}" onerror="this.src='${placeholder}'">
+                    <div class="game-overlay"></div>
+                    <div class="play-btn"></div>
+                </div>
+                <div class="game-info">
+                    <div class="game-name">${game.name}</div>
+                    <div class="game-meta">点击启动游戏</div>
+                </div>
+            `;
+            
             card.onclick = () => launchGame(game);
-            
-            const img = document.createElement('img');
-            img.src = thumbnailMap.get(game.appId) || game.thumbnail;
-            img.onerror = () => {
-                img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect fill="%231a1a2e" width="320" height="180"/><text x="50%" y="50%" text-anchor="middle" fill="%23666" font-size="40">🎮</text></svg>';
-            };
-            
-            const info = document.createElement('div');
-            info.className = 'game-info';
-            info.innerHTML = `<div class="game-name">${game.name}</div>`;
-            
-            card.appendChild(img);
-            card.appendChild(info);
-            gridContainer.appendChild(card);
-        }
+            grid.appendChild(card);
+        });
         
         showToast(`已加载 ${games.length} 款游戏`, 'success');
-    } catch (error) {
-        console.error('扫描失败:', error);
+    } catch (e) {
+        console.error('扫描失败:', e);
         loading.style.display = 'none';
         empty.style.display = 'flex';
-        showToast('扫描失败: ' + (error as Error).message, 'error');
+        showToast('扫描失败: ' + (e as Error).message, 'error');
     }
 }
 
-// 启动游戏
-async function launchGame(game: Game) {
-    try {
-        showToast(`正在启动: ${game.name}`, 'success');
-        await shell.openPath(game.exePath);
-    } catch (error) {
-        showToast('启动失败: ' + (error as Error).message, 'error');
-    }
-}
-
-// 显示提示
-function showToast(message: string, type: 'success' | 'error' = 'success') {
-    const existing = document.querySelector('.toast');
-    if (existing) existing.remove();
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => toast.remove(), 3000);
-}
-
-// 初始化
 async function init() {
     await win.setTitle('掌机启动器');
     await win.setSize(2560, 1600);
     await win.center();
-    await win.setEffect('mica');
+    await win.setEffect('none');
     
-    loadStyles();
-    createUI();
+    createStyles();
+    
+    const bg = document.createElement('div');
+    bg.className = 'steam-bg';
+    document.body.appendChild(bg);
+    
+    createLoadingUI();
+    createEmptyUI();
+    createMainUI();
+    
     await scanGames();
 }
 
