@@ -35,13 +35,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $frontendDest = "temp_qiangqiang\src\frontend"
-          if (-not (Test-Path $frontendDest)) {
-              New-Item -ItemType Directory -Path $frontendDest -Force | Out-Null
-          }
-          Copy-Item -Path "src\frontend" -Destination $frontendDest -Recurse -Force
-          Copy-Item -Path "src\scanner.ts" -Destination "temp_qiangqiang\src\scanner.ts" -Force
-          Copy-Item -Path "src\api.ts" -Destination "temp_qiangqiang\src\api.ts" -Force
+          
+          # 复制 src 目录下的所有文件
+          Copy-Item -Path "src" -Destination "temp_qiangqiang\src" -Recurse -Force
           Copy-Item -Path "app.config.json" -Destination "temp_qiangqiang\app.config.json" -Force
       
       - name: Build Frontend
