@@ -532,10 +532,21 @@ function showToast(msg: string, type: 'success' | 'error' = 'success') {
 
 async function launchGame(game: Game) {
     showToast(`正在启动: ${game.name}`, 'success');
+    
     try {
-        await shell.openPath(game.exePath);
+        if (game.exePath) {
+            await shell.openPath(game.exePath);
+        } else {
+            // 尝试通过 Steam 协议启动
+            await shell.openUrl(`steam://rungameid/${game.appId}`);
+        }
     } catch (e) {
-        showToast('启动失败: ' + (e as Error).message, 'error');
+        // 尝试 Steam 协议兜底
+        try {
+            await shell.openUrl(`steam://rungameid/${game.appId}`);
+        } catch (e2) {
+            showToast(`启动失败: ${(e as Error).message}`, 'error');
+        }
     }
 }
 
@@ -584,8 +595,8 @@ async function scanGames() {
                     <div class="play-btn"></div>
                 </div>
                 <div class="game-info">
-                    <div class="game-name">${game.name}</div>
-                    <div class="game-meta">点击启动游戏</div>
+                    <div class="game-name" title="${game.exePath}">${game.name}</div>
+                    <div class="game-meta">▶ 点击启动</div>
                 </div>
             `;
             
