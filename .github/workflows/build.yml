@@ -48,13 +48,13 @@ jobs:
       - name: Build Frontend
         run: |
           cd temp_qiangqiang
-          bun scripts/build-frontend.ts
+          bun scripts/build.ts --frontend-only
       
       - name: Build Native
         run: |
           cd temp_qiangqiang
-          bun scripts/build-native.ts
-          bun scripts/build-single.ts
+          bun scripts/build.ts --native-only
+          bun scripts/build.ts --single-exe
       
       - name: Prepare Output
         shell: pwsh
