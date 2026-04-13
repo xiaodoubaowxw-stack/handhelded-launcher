@@ -29,39 +29,35 @@ jobs:
         run: |
           cd temp_qiangqiang
           bun install
-          bun run setup
+          bun scripts/setup.ts
       
       - name: Copy Project Files
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           
-          # 复制前端文件（先确保目录存在）
           $frontendDest = "temp_qiangqiang\src\frontend"
           if (-not (Test-Path $frontendDest)) {
               New-Item -ItemType Directory -Path $frontendDest -Force | Out-Null
           }
           Copy-Item -Path "src\frontend" -Destination $frontendDest -Recurse -Force
-          
-          # 复制 TypeScript 文件
           Copy-Item -Path "src\scanner.ts" -Destination "temp_qiangqiang\src\scanner.ts" -Force
           Copy-Item -Path "src\api.ts" -Destination "temp_qiangqiang\src\api.ts" -Force
-          
-          # 复制配置文件
           Copy-Item -Path "app.config.json" -Destination "temp_qiangqiang\app.config.json" -Force
       
       - name: Build Frontend
         run: |
           cd temp_qiangqiang
-          bun run build:frontend
+          bun scripts/build-frontend.ts
       
       - name: Build Native
         run: |
           cd temp_qiangqiang
-          bun run build:native
-          bun run build:single
+          bun scripts/build-native.ts
+          bun scripts/build-single.ts
       
       - name: Prepare Output
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "dist" -Force | Out-Null
           if (Test-Path "temp_qiangqiang\dist\强强-portable.zip") {
