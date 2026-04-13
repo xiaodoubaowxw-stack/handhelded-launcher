@@ -1,4 +1,4 @@
-# QiangQiangGameLauncher
+# 掌机启动器 (QiangQiangGameLauncher)
 
 基于 QiangQiang 框架开发的轻量级 Steam 游戏启动器，类似 Steam 大屏幕模式。
 
@@ -7,17 +7,20 @@
 - 🚀 极小体积、单 exe、极速启动
 - 🎮 自动扫描 Steam 游戏库
 - 🖼️ 显示游戏缩略图（网格布局）
+- 💾 本地缩略图缓存，告别重复下载
 - ☁️ GitHub Actions 云编译，下载即用
+- 📺 适配 2560×1600 高分辨率掌机屏幕
 
 ## 下载
 
-前往 [Releases](https://github.com/kobolingfeng/qiangqiang-game-launcher/releases) 下载最新版本。
+前往 [Releases](https://github.com/kobolingfeng/掌机启动器/releases) 下载最新版本。
 
 ## 功能
 
 - 自动扫描 Steam 安装的游戏
 - 网格展示游戏缩略图
 - 点击即可启动游戏
+- 缩略图本地缓存（30天有效期）
 - 适合 Windows 掌机使用（大屏幕模式）
 
 ## 构建

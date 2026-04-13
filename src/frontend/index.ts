@@ -1,8 +1,57 @@
 // QiangQiangGameLauncher - 前端入口
 // 基于 QiangQiang 框架的游戏启动器
 
-import { win, shell } from '../api';
+import { win, shell, http, app, fs } from '../api';
 import { Game, scanSteamGames } from './scanner';
+
+// 缩略图缓存配置
+const CACHE_VERSION = 'v1';
+const MAX_CACHE_AGE_DAYS = 30;
+
+// 获取缓存目录
+async function getCacheDir(): Promise<string> {
+    const appPath = await app.getPath('userData');
+    return `${appPath}/thumbnails`;
+}
+
+// 确保缓存目录存在
+async function ensureCacheDir(): Promise<string> {
+    const cacheDir = await getCacheDir();
+    try {
+        await fs.mkdir(cacheDir);
+    } catch {}
+    return cacheDir;
+}
+
+// 下载并缓存图片
+async function downloadAndCacheImage(url: string, appId: string, cacheDir: string): Promise<string> {
+    const cachePath = `${cacheDir}/${appId}_${CACHE_VERSION}.jpg`;
+    
+    // 检查缓存是否存在
+    try {
+        const stat = await fs.stat(cachePath);
+        if (stat.isFile) {
+            console.log(`[缓存命中] ${appId}`);
+            return cachePath;
+        }
+    } catch {}
+    
+    // 下载图片
+    try {
+        console.log(`[下载] ${appId} <- ${url}`);
+        const response = await http.get(url);
+        if (response.body && response.body.length > 1000) {
+            await fs.writeTextFile(cachePath, response.body);
+            console.log(`[已缓存] ${appId} -> ${cachePath}`);
+            return cachePath;
+        }
+    } catch (error) {
+        console.error(`[下载失败] ${appId}:`, error);
+    }
+    
+    // 下载失败返回原始URL
+    return url;
+}
 
 let games: Game[] = [];
 let grid: ReturnType<typeof createGrid> | null = null;
@@ -10,8 +59,8 @@ let grid: ReturnType<typeof createGrid> | null = null;
 // 初始化应用
 async function init() {
     // 设置窗口
-    await win.setTitle('游戏启动器');
-    await win.setSize(1280, 800);
+    await win.setTitle('掌机启动器');
+    await win.setSize(2560, 1600);
     await win.center();
     await win.setEffect('mica'); // Windows 11 Mica 效果
     
@@ -47,14 +96,14 @@ async function loadStyles() {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 20px 40px;
+            padding: 32px 64px;
             background: rgba(0, 0, 0, 0.3);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         
         .header h1 {
-            font-size: 28px;
+            font-size: 42px;
             font-weight: 600;
             background: linear-gradient(90deg, #00d4ff, #7c3aed);
             -webkit-background-clip: text;
@@ -63,15 +112,15 @@ async function loadStyles() {
         
         .header-actions {
             display: flex;
-            gap: 12px;
+            gap: 16px;
         }
         
         .btn {
-            padding: 10px 20px;
+            padding: 16px 32px;
             border: none;
-            border-radius: 8px;
+            border-radius: 12px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 20px;
             font-weight: 500;
             transition: all 0.2s ease;
         }
@@ -129,24 +178,24 @@ async function loadStyles() {
         
         .game-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 24px;
-            padding: 20px 0;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 32px;
+            padding: 32px 0;
         }
         
         .game-card {
             background: rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
+            border-radius: 20px;
             overflow: hidden;
             cursor: pointer;
             transition: all 0.3s ease;
-            border: 2px solid transparent;
+            border: 3px solid transparent;
         }
         
         .game-card:hover {
-            transform: translateY(-8px) scale(1.02);
+            transform: translateY(-12px) scale(1.03);
             border-color: #7c3aed;
-            box-shadow: 0 20px 40px rgba(124, 58, 237, 0.3);
+            box-shadow: 0 30px 60px rgba(124, 58, 237, 0.4);
         }
         
         .game-card img {
@@ -157,11 +206,11 @@ async function loadStyles() {
         }
         
         .game-card .game-info {
-            padding: 16px;
+            padding: 24px;
         }
         
         .game-card .game-name {
-            font-size: 16px;
+            font-size: 22px;
             font-weight: 600;
             white-space: nowrap;
             overflow: hidden;
@@ -251,6 +300,24 @@ async function createUI() {
 }
 
 // 扫描游戏
+// 预加载缩略图（带缓存）
+async function preloadThumbnails(games: Game[], cacheDir: string): Promise<Map<string, string>> {
+    const thumbnailMap = new Map<string, string>();
+    const loadPromises: Promise<void>[] = [];
+    
+    // 并发加载前10个游戏的缩略图
+    const gamesToLoad = games.slice(0, 10);
+    
+    for (const game of gamesToLoad) {
+        const promise = downloadAndCacheImage(game.thumbnail, game.appId, cacheDir)
+            .then(cachePath => thumbnailMap.set(game.appId, cachePath));
+        loadPromises.push(promise);
+    }
+    
+    await Promise.all(loadPromises);
+    return thumbnailMap;
+}
+
 async function scanGames() {
     const loading = document.getElementById('loading')!;
     const content = document.getElementById('content')!;
@@ -275,15 +342,20 @@ async function scanGames() {
         const gridContainer = document.getElementById('game-grid')!;
         gridContainer.innerHTML = '';
         
+        // 准备缓存
+        const cacheDir = await ensureCacheDir();
+        const thumbnailMap = await preloadThumbnails(games, cacheDir);
+        
         games.forEach(game => {
             const card = document.createElement('div');
             card.className = 'game-card';
             card.onclick = () => launchGame(game);
             
-            // 缩略图
+            // 缩略图（优先使用缓存）
             const img = document.createElement('img');
-            img.src = game.thumbnail || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect fill="%231a1a2e" width="320" height="180"/><text x="50%" y="50%" text-anchor="middle" fill="%23666" font-size="40">🎮</text></svg>';
+            img.src = thumbnailMap.get(game.appId) || game.thumbnail;
             img.onerror = () => {
+                // 缓存失败则使用占位图
                 img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect fill="%231a1a2e" width="320" height="180"/><text x="50%" y="50%" text-anchor="middle" fill="%23666" font-size="40">🎮</text></svg>';
             };
             

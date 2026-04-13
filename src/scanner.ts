@@ -1,5 +1,5 @@
 // Steam 游戏扫描模块
-import { fs, registry } from './api';
+import { fs, registry, app } from './api';
 
 export interface Game {
     appId: string;
@@ -13,6 +13,51 @@ export interface Game {
 const STEAM_REGISTRY_KEY = 'Software\\Valve\\Steam';
 const STEAM_REGISTRY_VALUE = 'SteamPath';
 
+// 缩略图缓存目录
+const CACHE_DIR = 'cache/thumbnails';
+
+// 获取缓存目录路径
+async function getCacheDir(): Promise<string> {
+    const appPath = await app.getPath('userData');
+    return `${appPath}\\${CACHE_DIR}`;
+}
+
+// 获取缓存的图片路径
+async function getCachedImagePath(appId: string, type: 'thumbnail' | 'cover'): Promise<string> {
+    const cacheDir = await getCacheDir();
+    const ext = type === 'thumbnail' ? '_600x900.jpg' : '_header.jpg';
+    return `${cacheDir}\\${appId}${ext}`;
+}
+
+// 下载并缓存图片
+async function downloadAndCacheImage(url: string, appId: string, type: 'thumbnail' | 'cover'): Promise<string> {
+    const cachedPath = await getCachedImagePath(appId, type);
+    const cacheDir = await getCacheDir();
+    
+    // 检查是否已有缓存
+    try {
+        const exist = await fs.stat(cachedPath);
+        if (exist.isFile) {
+            console.log(`[缓存命中] ${appId} ${type}`);
+            return cachedPath;
+        }
+    } catch {
+        // 缓存不存在，需要下载
+    }
+    
+    // 确保缓存目录存在
+    try {
+        await fs.mkdir(cacheDir);
+    } catch {
+        // 目录可能已存在
+    }
+    
+    // 下载图片（这里通过前端 fetch 加载）
+    // 实际下载逻辑在 frontend 中通过 HTTP API 实现
+    console.log(`[需要下载] ${appId} ${type} -> ${url}`);
+    return url; // 返回原始 URL，由前端负责下载
+}
+
 // Steam libraryfolders.vdf 解析
 function parseVDF(content: string): string[] {
     const paths: string[] = [];
@@ -23,7 +68,6 @@ function parseVDF(content: string): string[] {
     for (const line of lines) {
         const trimmed = line.trim();
         
-        // 检测 libraryfolders 块开始
         if (trimmed.includes('"libraryfolders"')) {
             inLibraryFolder = true;
             depth = 0;
@@ -32,17 +76,14 @@ function parseVDF(content: string): string[] {
         
         if (!inLibraryFolder) continue;
         
-        // 统计大括号深度
         depth += (trimmed.match(/{/g) || []).length;
         depth -= (trimmed.match(/}/g) || []).length;
         
-        // 提取路径
         const pathMatch = trimmed.match(/"path"\s*"([^"]+)"/);
         if (pathMatch) {
             paths.push(pathMatch[1].replace(/\\\\/g, '\\'));
         }
         
-        // 检查是否退出 libraryfolders 块
         if (depth <= 0 && inLibraryFolder && trimmed.includes('}')) {
             inLibraryFolder = false;
         }
@@ -77,7 +118,6 @@ async function getSteamPath(): Promise<string | null> {
     try {
         const steamPath = await registry.read('HKCU', STEAM_REGISTRY_KEY, STEAM_REGISTRY_VALUE);
         if (steamPath) {
-            // 将 / 转换为 \\
             return steamPath.replace(/\//g, '\\');
         }
     } catch {
@@ -128,7 +168,6 @@ export async function scanSteamGames(): Promise<Game[]> {
         const manifestPath = `${libPath}\\steamapps`;
         
         try {
-            // 读取目录下所有 appmanifest_*.acf 文件
             const files = await fs.readDir(manifestPath);
             
             for (const file of files) {
@@ -146,7 +185,6 @@ export async function scanSteamGames(): Promise<Game[]> {
                             let exePath = '';
                             try {
                                 const gameFiles = await fs.readDir(gamePath);
-                                // 优先查找 .exe 文件
                                 const exeFiles = gameFiles.filter(f => f.isFile && f.name.toLowerCase().endsWith('.exe'));
                                 if (exeFiles.length > 0) {
                                     exePath = `${gamePath}\\${exeFiles[0].name}`;
@@ -178,4 +216,31 @@ export async function scanSteamGames(): Promise<Game[]> {
     
     console.log(`共扫描到 ${games.length} 款游戏`);
     return games;
+}
+
+// 清理旧缓存（可选功能）
+export async function cleanThumbnailCache(maxAgeDays: number = 30): Promise<void> {
+    const cacheDir = await getCacheDir();
+    
+    try {
+        const files = await fs.readDir(cacheDir);
+        const now = Date.now();
+        const maxAge = maxAgeDays * 24 * 60 * 60 * 1000;
+        
+        for (const file of files) {
+            if (file.isFile) {
+                try {
+                    const stat = await fs.stat(`${cacheDir}\\${file.name}`);
+                    if (now - stat.mtime > maxAge) {
+                        console.log(`[清理缓存] ${file.name}`);
+                        // 删除旧文件（需要添加 deleteFile API）
+                    }
+                } catch {
+                    // 忽略错误
+                }
+            }
+        }
+    } catch {
+        // 缓存目录不存在，无需清理
+    }
 }
